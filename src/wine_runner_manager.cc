@@ -25,6 +25,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <charconv>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -34,6 +36,7 @@
 #include <glibmm/spawn.h>
 #include <glibmm/timer.h>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -1107,9 +1110,17 @@ void WineRunnerManager::sweep_leftover_temp_dirs(const std::string& runners_dir)
         continue;
       if (!is_legacy_tmp_dir)
       {
-        if (!std::all_of(owner_id.begin(), owner_id.end(), [](unsigned char character) { return std::isdigit(character) != 0; }))
-          continue;
-        if (is_process_alive(static_cast<pid_t>(std::stol(owner_id))))
+        // Parse without throwing: a malformed (eg. absurdly long) suffix must never take the
+        // application down, since this runs on the install worker thread
+        std::int64_t owner_process_id = 0;
+        const char* first = owner_id.data();
+        const char* last = owner_id.data() + owner_id.size();
+        auto [parse_end, parse_error] = std::from_chars(first, last, owner_process_id);
+        if (parse_error != std::errc() || parse_end != last)
+          continue; // Not a plain number, leave it alone
+        if (owner_process_id <= 0 || owner_process_id > static_cast<std::int64_t>(std::numeric_limits<pid_t>::max()))
+          continue; // Out of the valid process ID range, leave it alone
+        if (is_process_alive(static_cast<pid_t>(owner_process_id)))
           continue; // Owned by another running WineGUI instance
       }
       std::error_code error_code;
