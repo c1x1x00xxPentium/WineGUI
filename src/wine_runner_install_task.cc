@@ -87,7 +87,10 @@ void WineRunnerInstallTask::fetch_releases_async(WineRunner::SourceId source_id)
           // the pending dispatcher would join that brand new worker thread and freeze the UI.
           releases_fetched.emit();
         }
-        catch (const std::runtime_error& error)
+        // Catch every standard exception (incl. Glib::Error), not just std::runtime_error: an
+        // exception escaping this thread function would terminate the whole application, so any
+        // unexpected one has to become a failed operation instead
+        catch (const std::exception& error)
         {
           {
             std::lock_guard<std::mutex> lock(data_mutex_);
@@ -135,7 +138,8 @@ void WineRunnerInstallTask::install_async(const WineRunner::Release& release)
           checksum_verified_.store(checksum_verified);
           status_.store(success ? WineRunner::InstallStatus::Success : WineRunner::InstallStatus::Cancelled);
         }
-        catch (const std::runtime_error& error)
+        // See fetch_releases_async(): an escaping exception would terminate the application
+        catch (const std::exception& error)
         {
           {
             std::lock_guard<std::mutex> lock(data_mutex_);
@@ -167,7 +171,8 @@ void WineRunnerInstallTask::remove_async(const WineRunner::InstalledRunner& runn
         {
           WineRunnerManager::remove_runner(runner);
         }
-        catch (const std::runtime_error& error)
+        // See fetch_releases_async(): an escaping exception would terminate the application
+        catch (const std::exception& error)
         {
           error_message = error.what();
         }
